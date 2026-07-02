@@ -1,0 +1,1029 @@
+<?php
+// classes/Job.php
+class Job {
+    private $db;
+    
+    public function __construct() {
+        $this->db = Database::getInstance()->getConnection();
+    }
+    
+    public function create($data) {
+        $stmt = $this->db->prepare("
+            INSERT INTO jobs (
+                companyId, postedBy, jobTitle, jobSlug, jobDescription, 
+                jobRequirements, jobBenefits, jobType, experienceLevel, 
+                location, isRemote, salaryMin, salaryMax, salaryCurrency, 
+                salaryPeriod, isSalaryVisible, expiresAt, createdAt
+            ) VALUES (
+                :companyId, :postedBy, :jobTitle, :jobSlug, :jobDescription, 
+                :jobRequirements, :jobBenefits, :jobType, :experienceLevel, 
+                :location, :isRemote, :salaryMin, :salaryMax, :salaryCurrency, 
+                :salaryPeriod, :isSalaryVisible, DATE_ADD(NOW(), INTERVAL 30 DAY), NOW()
+            )
+        ");
+        
+        $slug = $this->createSlug($data['jobTitle']);
+        
+        $stmt->execute([
+            ':companyId' => $data['companyId'],
+            ':postedBy' => $data['postedBy'],
+            ':jobTitle' => $data['jobTitle'],
+            ':jobSlug' => $slug,
+            ':jobDescription' => $data['jobDescription'],
+            ':jobRequirements' => $data['jobRequirements'],
+            ':jobBenefits' => $data['jobBenefits'] ?? null,
+            ':jobType' => $data['jobType'],
+            ':experienceLevel' => $data['experienceLevel'],
+            ':location' => $data['location'],
+            ':isRemote' => $data['isRemote'] ?? 0,
+            ':salaryMin' => $data['salaryMin'] ?? null,
+            ':salaryMax' => $data['salaryMax'] ?? null,
+            ':salaryCurrency' => $data['salaryCurrency'] ?? 'USD',
+            ':salaryPeriod' => $data['salaryPeriod'] ?? 'yearly',
+            ':isSalaryVisible' => $data['isSalaryVisible'] ?? 1
+        ]);
+        
+        $jobId = $this->db->lastInsertId();
+        
+        // Add skills if provided
+        if (!empty($data['skills'])) {
+            $this->addSkills($jobId, $data['skills']);
+        }
+        
+        return $jobId;
+    }
+    
+    private function createSlug($title) {
+        $slug = strtolower(trim(preg_replace('/[^a-zA-Z0-9-]+/', '-', $title), '-'));
+        $stmt = $this->db->prepare("SELECT COUNT(*) FROM jobs WHERE jobSlug LIKE ?");
+        $stmt->execute([$slug . '%']);
+        $count = $stmt->fetchColumn();
+        
+        return $count > 0 ? $slug . '-' . ($count + 1) : $slug;
+    }
+    
+    public function addSkills($jobId, $skills) {
+        $skills = array_unique($skills);
+        $stmt = $this->db->prepare("
+            INSERT INTO jobSkills (jobId, skillName, createdAt)
+            VALUES (:jobId, :skillName, NOW())
+        ");
+        
+        foreach ($skills as $skill) {
+            $stmt->execute([
+                ':jobId' => $jobId,
+                ':skillName' => trim($skill)
+            ]);
+        }
+    }
+    
+    public function getFeaturedJobs($limit = 6) {
+        $stmt = $this->db->prepare("
+            SELECT j.*, c.companyName, c.logo as companyLogo 
+            FROM jobs j
+            JOIN companies c ON j.companyId = c.companyId
+            WHERE j.isActive = 1 AND j.isFeatured = 1
+            ORDER BY j.createdAt DESC
+            LIMIT :limit
+        ");
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll();
+    }
+    
+    public function searchJobs($query = '', $filters = [], $page = 1, $perPage = 10) {
+        // Basic setup - ensure page is at least 1 and properly cast to int
+        $page = max(1, (int)$page);
+        $perPage = (int)$perPage;
+        $offset = ($page - 1) * $perPage;
+        
+        $whereConditions = [];
+        $params = [];
+        
+        // Always include active jobs
+        $whereConditions[] = "j.isActive = 1";
+        
+        // Handle search query
+        if (!empty($query)) {
+            $whereConditions[] = "(j.jobTitle LIKE :query OR j.jobDescription LIKE :query OR c.companyName LIKE :query)";
+            $params[':query'] = '%' . $query . '%';
+        }
+        
+        // Handle location filter
+        if (!empty($filters['location'])) {
+            $whereConditions[] = "j.location LIKE :location";
+            $params[':location'] = '%' . $filters['location'] . '%';
+        }
+        
+        // Handle job type filter
+        if (!empty($filters['jobType'])) {
+            if ($filters['jobType'] === 'remote') {
+                $whereConditions[] = "j.isRemote = 1";
+            } else {
+                $whereConditions[] = "j.jobType = :jobType";
+                $params[':jobType'] = $filters['jobType'];
+            }
+        }
+        
+        // Handle experience level filter
+        if (!empty($filters['experienceLevel'])) {
+            $whereConditions[] = "j.experienceLevel = :experienceLevel";
+            $params[':experienceLevel'] = $filters['experienceLevel'];
+        }
+        
+        // Build the main SQL query
+        $sql = "
+            SELECT j.*, c.companyName, c.logo as companyLogo 
+            FROM jobs j
+            JOIN companies c ON j.companyId = c.companyId
+            WHERE " . implode(' AND ', $whereConditions) . "
+            ORDER BY j.createdAt DESC
+            LIMIT :limit OFFSET :offset
+        ";
+        
+        try {
+            // Prepare and execute the main query
+            $stmt = $this->db->prepare($sql);
+            
+            // Bind all filter parameters
+            foreach ($params as $key => $value) {
+                $stmt->bindValue($key, $value);
+            }
+            
+            // Bind pagination parameters
+            $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+            
+            $stmt->execute();
+            $jobs = $stmt->fetchAll();
+            
+            // Build count query for pagination
+            $countSql = "
+                SELECT COUNT(*) 
+                FROM jobs j
+                JOIN companies c ON j.companyId = c.companyId
+                WHERE " . implode(' AND ', $whereConditions);
+            
+            $countStmt = $this->db->prepare($countSql);
+            
+            // Bind all filter parameters to count query
+            foreach ($params as $key => $value) {
+                $countStmt->bindValue($key, $value);
+            }
+            
+            $countStmt->execute();
+            $total = (int)$countStmt->fetchColumn();
+            
+            return [
+                'jobs' => $jobs,
+                'total' => $total,
+                'pages' => ceil($total / $perPage)
+            ];
+        }
+        catch (PDOException $e) {
+            error_log("Search jobs error: " . $e->getMessage());
+            return [
+                'jobs' => [],
+                'total' => 0,
+                'pages' => 0,
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+    
+    public function getJobBySlug($slug) {
+        $stmt = $this->db->prepare("
+            SELECT j.*, c.companyName, c.description as companyDescription, 
+                   c.websiteUrl as companyWebsite, c.logo as companyLogo
+            FROM jobs j
+            JOIN companies c ON j.companyId = c.companyId
+            WHERE j.jobSlug = :slug
+        ");
+        $stmt->execute([':slug' => $slug]);
+        return $stmt->fetch();
+    }
+    
+    public function getJobSkills($jobId) {
+        $stmt = $this->db->prepare("
+            SELECT skillName FROM jobSkills
+            WHERE jobId = :jobId
+            ORDER BY createdAt
+        ");
+        $stmt->execute([':jobId' => $jobId]);
+        return $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
+    }
+    
+    public function getTopCompanies($limit = 6) {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT c.companyId, c.companyName as name, c.logo, c.companySlug as slug,
+                       COUNT(j.jobId) as job_count
+                FROM companies c
+                LEFT JOIN jobs j ON c.companyId = j.companyId AND j.isActive = 1
+                GROUP BY c.companyId, c.companyName, c.logo, c.companySlug
+                ORDER BY job_count DESC
+                LIMIT :limit
+            ");
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $stmt->execute();
+            return $stmt->fetchAll();
+        } catch (Exception $e) {
+            error_log("Error in getTopCompanies: " . $e->getMessage());
+            return []; // Return empty array instead of null to avoid foreach errors
+        }
+    }
+    
+    public function getJobById($jobId) {        
+        $stmt = $this->db->prepare("
+            SELECT j.*, c.companyName, c.description as companyDescription, 
+                   c.websiteUrl as companyWebsite, c.logo as companyLogo,
+                   c.foundedYear as companyFounded, c.employeeCount as companySize,
+                   c.industry as companySector, c.linkedinUrl as companyLinkedIn
+            FROM jobs j
+            JOIN companies c ON j.companyId = c.companyId
+            WHERE j.jobId = :jobId
+        ");
+        $stmt->execute([':jobId' => $jobId]);
+        return $stmt->fetch();
+    }
+    
+    /**
+     * Count active jobs for a company or system-wide
+     * 
+     * @param int|null $companyId Optional company ID, if null returns system-wide count
+     * @return int Number of active jobs
+     */
+    public function countActiveJobs($companyId = null) {
+        if ($companyId !== null) {
+            // Count for specific company
+            $stmt = $this->db->prepare("
+                SELECT COUNT(*) FROM jobs 
+                WHERE companyId = :companyId AND isActive = 1
+            ");
+            $stmt->execute([':companyId' => $companyId]);
+        } else {
+            // System-wide count
+            $stmt = $this->db->query("SELECT COUNT(*) FROM jobs WHERE isActive = 1");
+        }
+        
+        return (int)$stmt->fetchColumn();
+    }
+    
+    /**
+     * Get jobs for a specific company with pagination
+     * 
+     * @param int $companyId Company ID
+     * @param int $page Page number
+     * @param int $perPage Items per page
+     * @return array Jobs and pagination info
+     */
+    public function getJobsByCompany($companyId, $page = 1, $perPage = 10) {
+        // Calculate offset for pagination
+        $offset = ($page - 1) * $perPage;
+        
+        // Get jobs
+        $stmt = $this->db->prepare("
+            SELECT j.*, c.companyName, c.logo as companyLogo 
+            FROM jobs j
+            JOIN companies c ON j.companyId = c.companyId
+            WHERE j.companyId = :companyId AND j.isActive = 1
+            ORDER BY j.createdAt DESC
+            LIMIT :limit OFFSET :offset
+        ");
+        
+        $stmt->bindValue(':companyId', $companyId, PDO::PARAM_INT);
+        $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        
+        $jobs = $stmt->fetchAll();
+        
+        // Get total count for pagination
+        $stmt = $this->db->prepare("
+            SELECT COUNT(*) FROM jobs 
+            WHERE companyId = :companyId AND isActive = 1
+        ");
+        
+        $stmt->execute([':companyId' => $companyId]);
+        $total = $stmt->fetchColumn();
+        
+        return [
+            'jobs' => $jobs,
+            'total' => $total,
+            'pages' => ceil($total / $perPage),
+            'currentPage' => $page
+        ];
+    }
+    
+    /**
+     * Get job performance data for charts
+     * 
+     * @param int $companyId The company ID
+     * @param int $months Number of months to look back
+     * @return array Performance data with month names and counts
+     */
+    public function getJobPerformance($companyId, $months = 6) {
+        try {
+            // First check if the job_monthly_stats table exists and has data
+            $checkStmt = $this->db->prepare("SHOW TABLES LIKE 'job_monthly_stats'");
+            $checkStmt->execute();
+            $tableExists = $checkStmt->rowCount() > 0;
+            
+            if ($tableExists) {
+                // Use the stored procedure if available
+                try {
+                    $stmt = $this->db->prepare("CALL GetJobPerformanceByCompany(?, ?)");
+                    $stmt->execute([$companyId, $months]);
+                    $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    
+                    if (!empty($results)) {
+                        return $results;
+                    }
+                } catch (Exception $e) {
+                    // Fallback to direct table query if procedure fails
+                    $stmt = $this->db->prepare("
+                        SELECT 
+                            month_name,
+                            SUM(count) as count,
+                            SUM(views) as views
+                        FROM 
+                            job_monthly_stats
+                        WHERE 
+                            companyId = :companyId
+                        GROUP BY 
+                            month_date, month_name
+                        ORDER BY 
+                            month_date DESC
+                        LIMIT :months
+                    ");
+                    $stmt->bindValue(':companyId', $companyId, PDO::PARAM_INT);
+                    $stmt->bindValue(':months', $months, PDO::PARAM_INT);
+                    $stmt->execute();
+                    $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    
+                    if (!empty($results)) {
+                        return $results;
+                    }
+                }
+            }
+            
+            // Fallback to original implementation using applications table
+            $stmt = $this->db->prepare("
+                SELECT 
+                    DATE_FORMAT(a.createdAt, '%Y-%m') as month,
+                    DATE_FORMAT(a.createdAt, '%b') as month_name,
+                    COUNT(a.applicationId) as count
+                FROM applications a
+                JOIN jobs j ON a.jobId = j.jobId
+                WHERE j.companyId = :companyId
+                AND a.createdAt >= DATE_SUB(CURRENT_DATE(), INTERVAL :months MONTH)
+                GROUP BY DATE_FORMAT(a.createdAt, '%Y-%m'), DATE_FORMAT(a.createdAt, '%b')
+                ORDER BY month ASC
+            ");
+            $stmt->bindValue(':companyId', $companyId, PDO::PARAM_INT);
+            $stmt->bindValue(':months', $months, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // If no data, provide some placeholder data for the full time range
+            if (empty($results)) {
+                $results = [];
+                for ($i = $months-1; $i >= 0; $i--) {
+                    $monthDate = date('Y-m-d', strtotime("-$i months"));
+                    $results[] = [
+                        'month' => date('Y-m', strtotime($monthDate)),
+                        'month_name' => date('M', strtotime($monthDate)),
+                        'count' => 0,
+                        'views' => 0
+                    ];
+                }
+            } else {
+                // Fill in missing months with zeros and add view data
+                $filledResults = [];
+                $existingMonths = array_column($results, 'month');
+                
+                for ($i = $months-1; $i >= 0; $i--) {
+                    $monthDate = date('Y-m-d', strtotime("-$i months"));
+                    $monthKey = date('Y-m', strtotime($monthDate));
+                    
+                    if (in_array($monthKey, $existingMonths)) {
+                        $index = array_search($monthKey, $existingMonths);
+                        $result = $results[$index];
+                        // Add views (approximately double the applications as a placeholder)
+                        $result['views'] = isset($result['views']) ? $result['views'] : $result['count'] * 2;
+                        $filledResults[] = $result;
+                    } else {
+                        $filledResults[] = [
+                            'month' => $monthKey,
+                            'month_name' => date('M', strtotime($monthDate)),
+                            'count' => 0,
+                            'views' => 0
+                        ];
+                    }
+                }
+                
+                $results = $filledResults;
+                usort($results, function($a, $b) {
+                    return strcmp($a['month'], $b['month']);
+                });
+            }
+            
+            return $results;
+        } catch (Exception $e) {
+            error_log("Error in getJobPerformance: " . $e->getMessage());
+            
+            // Return empty fallback data on error
+            $results = [];
+            for ($i = $months-1; $i >= 0; $i--) {
+                $monthDate = date('Y-m-d', strtotime("-$i months"));
+                $results[] = [
+                    'month_name' => date('M', strtotime($monthDate)),
+                    'count' => 0,
+                    'views' => 0
+                ];
+            }
+            return $results;
+        }
+    }
+    
+    /**
+     * Get recommended jobs based on user profile and previous applications
+     */
+    public function getRecommendedJobs($userId, $limit = 6) {
+        try {
+            // Get jobs based on user's previous applications and skills
+            $sql = "
+                SELECT DISTINCT j.*, c.companyName, c.logo as companyLogo 
+                FROM jobs j
+                JOIN companies c ON j.companyId = c.companyId
+                LEFT JOIN (
+                    SELECT jobId FROM applications WHERE userId = :userId
+                ) a ON j.jobId = a.jobId
+                WHERE j.isActive = 1 
+                AND a.jobId IS NULL  -- Don't recommend jobs user already applied to
+                AND j.expiresAt > NOW()
+                ORDER BY j.createdAt DESC
+                LIMIT :limit
+            ";
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindValue(':userId', $userId, PDO::PARAM_INT);
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            return $stmt->fetchAll();
+        } catch (Exception $e) {
+            error_log("Error in getRecommendedJobs: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * Get jobs posted by a specific employer
+     */
+    public function getPostedJobsForEmployer($companyId, $status = 'active', $searchQuery = '', $limit = 10, $offset = 0) {
+        $where = ['j.companyId = :companyId'];
+        $params = [':companyId' => $companyId];
+        
+        // Filter by status
+        if ($status !== 'all') {
+            if ($status === 'active') {
+                $where[] = "j.isActive = 1 AND j.expiresAt > NOW()";
+            } elseif ($status === 'closed') {
+                $where[] = "(j.isActive = 0 OR j.expiresAt <= NOW())";
+            }
+        }
+        
+        // Search query
+        if (!empty($searchQuery)) {
+            $where[] = "(j.jobTitle LIKE :search_query OR j.jobDescription LIKE :search_query)";
+            $params[':search_query'] = "%$searchQuery%";
+        }
+        
+        $sql = "
+            SELECT 
+                j.jobId,
+                j.jobTitle as title,
+                j.location,
+                j.isActive,
+                j.applicationsCount as applicationCount,
+                j.createdAt,
+                CASE 
+                    WHEN j.isActive = 0 THEN 'closed'
+                    WHEN j.expiresAt <= NOW() THEN 'expired'
+                    ELSE 'active'
+                END as status
+            FROM jobs j
+            WHERE " . implode(' AND ', $where) . "
+            ORDER BY j.createdAt DESC
+            LIMIT :limit OFFSET :offset
+        ";
+        
+        $stmt = $this->db->prepare($sql);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        
+        return $stmt->fetchAll();
+    }
+    
+    /**
+     * Count jobs posted by a specific employer
+     */
+    public function countPostedJobsForEmployer($companyId, $status = 'active', $searchQuery = '') {
+        $where = ['j.companyId = :companyId'];
+        $params = [':companyId' => $companyId];
+        
+        // Filter by status
+        if ($status !== 'all') {
+            if ($status === 'active') {
+                $where[] = "j.isActive = 1 AND j.expiresAt > NOW()";
+            } elseif ($status === 'closed') {
+                $where[] = "(j.isActive = 0 OR j.expiresAt <= NOW())";
+            }
+        }
+        
+        // Search query
+        if (!empty($searchQuery)) {
+            $where[] = "(j.jobTitle LIKE :search_query OR j.jobDescription LIKE :search_query)";
+            $params[':search_query'] = "%$searchQuery%";
+        }
+        
+        $sql = "
+            SELECT COUNT(*) 
+            FROM jobs j
+            WHERE " . implode(' AND ', $where);
+        
+        $stmt = $this->db->prepare($sql);
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+        $stmt->execute();
+        
+        return $stmt->fetchColumn();
+    }
+    
+    /**
+     * Delete a job by its ID
+     * 
+     * @param int $jobId ID of the job to delete
+     * @return bool True if successful, false otherwise
+     */
+    public function deleteJob($jobId) {
+        try {
+            // First delete related job skills
+            $stmt = $this->db->prepare("DELETE FROM jobSkills WHERE jobId = :jobId");
+            $stmt->execute([':jobId' => $jobId]);
+            
+            // Delete any applications for this job
+            $stmt = $this->db->prepare("DELETE FROM applications WHERE jobId = :jobId");
+            $stmt->execute([':jobId' => $jobId]);
+            
+            // Delete saved jobs entries
+            $stmt = $this->db->prepare("DELETE FROM saved_jobs WHERE jobId = :jobId");
+            $stmt->execute([':jobId' => $jobId]);
+            
+            // Finally delete the job itself
+            $stmt = $this->db->prepare("DELETE FROM jobs WHERE jobId = :jobId");
+            $stmt->execute([':jobId' => $jobId]);
+            
+            return true;
+        } catch (Exception $e) {
+            error_log("Error deleting job: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Update an existing job
+     * 
+     * @param array $data Job data to update
+     * @return bool True if successful, false otherwise
+     */
+    public function updateJob($data) {
+        try {
+            if (!isset($data['jobId'])) {
+                throw new Exception("Job ID is required for updating");
+            }
+            
+            $jobId = $data['jobId'];
+            
+            // Update job details
+            $stmt = $this->db->prepare("
+                UPDATE jobs SET
+                    jobTitle = :jobTitle, 
+                    jobDescription = :jobDescription,
+                    jobRequirements = :jobRequirements,
+                    jobBenefits = :jobBenefits,
+                    jobType = :jobType,
+                    experienceLevel = :experienceLevel,
+                    location = :location,
+                    isRemote = :isRemote,
+                    salaryMin = :salaryMin,
+                    salaryMax = :salaryMax,
+                    salaryCurrency = :salaryCurrency,
+                    salaryPeriod = :salaryPeriod,
+                    isSalaryVisible = :isSalaryVisible,
+                    updatedAt = NOW()
+                WHERE jobId = :jobId AND companyId = :companyId
+            ");
+            
+            $stmt->execute([
+                ':jobId' => $jobId,
+                ':jobTitle' => $data['jobTitle'],
+                ':jobDescription' => $data['jobDescription'],
+                ':jobRequirements' => $data['jobRequirements'],
+                ':jobBenefits' => $data['jobBenefits'] ?? null,
+                ':jobType' => $data['jobType'],
+                ':experienceLevel' => $data['experienceLevel'],
+                ':location' => $data['location'],
+                ':isRemote' => $data['isRemote'] ?? 0,
+                ':salaryMin' => $data['salaryMin'] ?? null,
+                ':salaryMax' => $data['salaryMax'] ?? null,
+                ':salaryCurrency' => $data['salaryCurrency'] ?? 'USD',
+                ':salaryPeriod' => $data['salaryPeriod'] ?? 'yearly',
+                ':isSalaryVisible' => $data['isSalaryVisible'] ?? 1,
+                ':companyId' => $data['companyId']
+            ]);
+            
+            // Update skills if provided
+            if (isset($data['skills']) && is_array($data['skills'])) {
+                // Remove existing skills
+                $stmt = $this->db->prepare("DELETE FROM jobSkills WHERE jobId = :jobId");
+                $stmt->execute([':jobId' => $jobId]);
+                
+                // Add new skills
+                $this->addSkills($jobId, $data['skills']);
+            }
+            
+            return true;
+        } catch (Exception $e) {
+            error_log("Error updating job: " . $e->getMessage());
+            throw $e;
+        }
+    }
+    
+    /**
+     * Count weekly job applications
+     *
+     * @return int Number of applications in the past week
+     */
+    public function countWeeklyApplications() {
+        $stmt = $this->db->prepare("
+            SELECT COUNT(*) FROM applications
+            WHERE createdAt >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+        ");
+        $stmt->execute();
+        return (int)$stmt->fetchColumn();
+    }
+    
+    /**
+     * Get labels for job post trend chart
+     *
+     * @return array Array of date labels
+     */
+    public function getPostTrendLabels() {
+        // Return the last 6 months as labels
+        $labels = [];
+        for ($i = 5; $i >= 0; $i--) {
+            $labels[] = date('M Y', strtotime("-$i months"));
+        }
+        return $labels;
+    }
+    
+    /**
+     * Get data points for job post trend chart
+     *
+     * @return array Array of job post counts
+     */
+    public function getPostTrendData() {
+        // Placeholder data - in a real app, this would be from the database
+        return [45, 60, 75, 80, 90, 110];
+    }
+    
+    /**
+     * Get all jobs with pagination, search, and status filtering for admin
+     *
+     * @param int $page Current page number
+     * @param int $perPage Items per page
+     * @param string $statusFilter Status filter (all, active, pending, expired)
+     * @param string $search Search query
+     * @return array List of jobs
+     */
+    public function getAllJobs($page = 1, $perPage = 25, $statusFilter = 'all', $search = '') {
+        $params = [];
+        $where = [];
+        
+        // Add status filter if not 'all'
+        if ($statusFilter !== 'all') {
+            if ($statusFilter === 'active') {
+                $where[] = "j.isActive = 1 AND j.expiresAt > NOW()";
+            } elseif ($statusFilter === 'pending') {
+                $where[] = "j.isActive = 0 AND j.expiresAt > NOW()";
+            } elseif ($statusFilter === 'expired') {
+                $where[] = "j.expiresAt <= NOW()";
+            }
+        }
+        
+        // Add search condition if search term provided
+        if (!empty($search)) {
+            $where[] = "(j.jobTitle LIKE :search OR j.location LIKE :search OR c.companyName LIKE :search)";
+            $params[':search'] = "%$search%";
+        }
+        
+        // Build WHERE clause
+        $whereClause = empty($where) ? "" : "WHERE " . implode(" AND ", $where);
+        
+        // Calculate offset
+        $offset = ($page - 1) * $perPage;
+        
+        // Prepare and execute query
+        $sql = "
+            SELECT 
+                j.jobId as id,
+                j.jobTitle as title,
+                j.location,
+                j.applicationsCount as application_count,
+                j.isFeatured as is_featured,
+                j.createdAt as created_at,
+                c.companyId as company_id,
+                c.companyName as company_name,
+                c.logo as company_logo,
+                CASE 
+                    WHEN j.isActive = 0 THEN 'pending'
+                    WHEN j.expiresAt <= NOW() THEN 'expired'
+                    ELSE 'active'
+                END as status
+            FROM jobs j
+            JOIN companies c ON j.companyId = c.companyId
+            $whereClause
+            ORDER BY j.createdAt DESC
+            LIMIT :offset, :perPage
+        ";
+        
+        $stmt = $this->db->prepare($sql);
+        
+        // Bind parameters
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+        
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->bindValue(':perPage', $perPage, PDO::PARAM_INT);
+        
+        $stmt->execute();
+        return $stmt->fetchAll();
+    }
+    
+    /**
+     * Count all jobs with optional status filtering and search
+     *
+     * @param string $statusFilter Status filter (all, active, pending, expired)
+     * @param string $search Search query
+     * @return int Total number of matching jobs
+     */
+    public function countAllJobs($statusFilter = 'all', $search = '') {
+        $params = [];
+        $where = [];
+        
+        // Add status filter if not 'all'
+        if ($statusFilter !== 'all') {
+            if ($statusFilter === 'active') {
+                $where[] = "j.isActive = 1 AND j.expiresAt > NOW()";
+            } elseif ($statusFilter === 'pending') {
+                $where[] = "j.isActive = 0 AND j.expiresAt > NOW()";
+            } elseif ($statusFilter === 'expired') {
+                $where[] = "j.expiresAt <= NOW()";
+            }
+        }
+        
+        // Add search condition if search term provided
+        if (!empty($search)) {
+            $where[] = "(j.jobTitle LIKE :search OR j.location LIKE :search OR c.companyName LIKE :search)";
+            $params[':search'] = "%$search%";
+        }
+        
+        // Build WHERE clause
+        $whereClause = empty($where) ? "" : "WHERE " . implode(" AND ", $where);
+        
+        // Prepare and execute count query
+        $sql = "
+            SELECT COUNT(*) 
+            FROM jobs j
+            JOIN companies c ON j.companyId = c.companyId
+            $whereClause
+        ";
+        
+        $stmt = $this->db->prepare($sql);
+        
+        // Bind parameters
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+        
+        $stmt->execute();
+        return (int)$stmt->fetchColumn();
+    }
+    
+    /**
+     * Save a job for a user
+     * 
+     * @param int $userId The user ID
+     * @param int $jobId The job ID
+     * @return bool Whether saving was successful
+     */
+    public function saveJob($userId, $jobId) {
+        // Check if already saved
+        $stmt = $this->db->prepare("
+            SELECT COUNT(*) FROM saved_jobs 
+            WHERE userId = ? AND jobId = ?
+        ");
+        $stmt->execute([$userId, $jobId]);
+        $exists = $stmt->fetchColumn() > 0;
+        
+        // If already saved, return true
+        if ($exists) {
+            return true;
+        }
+        
+        // Insert new saved job
+        $stmt = $this->db->prepare("
+            INSERT INTO saved_jobs (userId, jobId, savedAt)
+            VALUES (?, ?, NOW())
+        ");
+        
+        return $stmt->execute([$userId, $jobId]);
+    }
+    
+    /**
+     * Get saved jobs for a user
+     *
+     * @param int $userId The user ID
+     * @param int $limit Number of jobs to return
+     * @param int $offset Offset for pagination
+     * @return array List of saved jobs
+     */
+    public function getSavedJobs($userId, $limit = 10, $offset = 0) {
+        $stmt = $this->db->prepare("
+            SELECT j.jobId, j.jobTitle, j.location, j.companyId, 
+                   c.companyName, c.logo as companyLogo, sj.savedAt
+            FROM saved_jobs sj
+            JOIN jobs j ON sj.jobId = j.jobId
+            JOIN companies c ON j.companyId = c.companyId
+            WHERE sj.userId = ?
+            ORDER BY sj.savedAt DESC
+            LIMIT ?, ?
+        ");
+        $stmt->execute([$userId, $offset, $limit]);
+        return $stmt->fetchAll();
+    }
+    
+    /**
+     * Count saved jobs for a user
+     *
+     * @param int $userId The user ID
+     * @return int Number of saved jobs
+     */
+    public function countSavedJobs($userId) {
+        $stmt = $this->db->prepare("
+            SELECT COUNT(*) 
+            FROM saved_jobs
+            WHERE userId = :userId
+        ");
+        $stmt->bindValue(':userId', $userId, PDO::PARAM_INT);
+        $stmt->execute();
+        return (int)$stmt->fetchColumn();
+    }
+    
+    /**
+     * Get popular search terms from job titles, locations, and skills
+     * 
+     * @param int $limit Maximum number of terms to return
+     * @return array List of popular search terms with their counts
+     */
+    public function getPopularSearchTerms($limit = 10) {
+        try {
+            // Get a mix of popular job titles, locations, and skills
+            $stmt = $this->db->prepare("
+                (SELECT jobTitle as term, COUNT(*) as term_count
+                FROM jobs 
+                WHERE isActive = 1
+                GROUP BY jobTitle
+                ORDER BY term_count DESC
+                LIMIT :half_limit)
+                
+                UNION
+                
+                (SELECT location as term, COUNT(*) as term_count
+                FROM jobs
+                WHERE isActive = 1 AND location IS NOT NULL AND location != ''
+                GROUP BY location
+                ORDER BY term_count DESC
+                LIMIT :half_limit)
+                
+                UNION
+                
+                (SELECT skillName as term, COUNT(*) as term_count
+                FROM jobSkills js
+                JOIN jobs j ON js.jobId = j.jobId
+                WHERE j.isActive = 1
+                GROUP BY skillName
+                ORDER BY term_count DESC
+                LIMIT :half_limit)
+                
+                ORDER BY term_count DESC
+                LIMIT :limit
+            ");
+            
+            $halfLimit = ceil($limit / 2);
+            $stmt->bindValue(':half_limit', $halfLimit, PDO::PARAM_INT);
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            $result = [];
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $result[$row['term']] = $row['term_count'];
+            }
+            
+            return $result;
+        } catch (Exception $e) {
+            error_log("Error in getPopularSearchTerms: " . $e->getMessage());
+            return []; // Return empty array
+        }
+    }
+    
+    /**
+     * Get job types from the database
+     * 
+     * @return array List of job types
+     */
+    public function getJobTypes() {
+        try {
+            // Get unique job types from the jobs table
+            $stmt = $this->db->query("
+                SELECT DISTINCT jobType
+                FROM jobs
+                WHERE isActive = 1 AND jobType IS NOT NULL AND jobType != ''
+                ORDER BY COUNT(*) DESC
+            ");
+            
+            return $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
+        } catch (Exception $e) {
+            error_log("Error in getJobTypes: " . $e->getMessage());
+            return ['fullTime', 'partTime', 'remote', 'contract']; // Fallback to defaults
+        }
+    }
+    
+    /**
+     * Get experience levels from the database
+     * 
+     * @return array List of experience levels
+     */
+    public function getExperienceLevels() {
+        try {
+            // Get unique experience levels from the jobs table
+            $stmt = $this->db->query("
+                SELECT DISTINCT experienceLevel
+                FROM jobs
+                WHERE isActive = 1 AND experienceLevel IS NOT NULL AND experienceLevel != ''
+                ORDER BY COUNT(*) DESC
+            ");
+            
+            return $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
+        } catch (Exception $e) {
+            error_log("Error in getExperienceLevels: " . $e->getMessage());
+            return ['entryLevel', 'midLevel', 'senior', 'executive']; // Fallback to defaults
+        }
+    }
+    
+    /**
+     * Get popular job locations
+     * 
+     * @param int $limit Number of locations to return
+     * @return array List of popular locations
+     */
+    public function getPopularLocations($limit = 5) {
+        try {
+            $stmt = $this->db->prepare("
+                SELECT location, COUNT(*) as location_count
+                FROM jobs
+                WHERE isActive = 1 AND location IS NOT NULL AND location != ''
+                GROUP BY location
+                ORDER BY location_count DESC
+                LIMIT :limit
+            ");
+            
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            return $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
+        } catch (Exception $e) {
+            error_log("Error in getPopularLocations: " . $e->getMessage());
+            return []; // Return empty array
+        }
+    }
+}

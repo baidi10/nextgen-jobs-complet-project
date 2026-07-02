@@ -1,0 +1,5 @@
+ const DB_HOST = 'localhost';
+    const DB_NAME = 'jobest';
+    const DB_USER = 'root';
+    const DB_PASS = '';
+    const BASE_URL = 'http://localhost/nextgen-jobs';

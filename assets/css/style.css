@@ -1,0 +1,729 @@
+:root {
+  --primary: #000000;
+  --primary-dark: #222222;
+  --secondary: #f8f9fa;
+  --text: #333333;
+  --text-light: #6c757d;
+  --border: #dee2e6;
+  --white: #ffffff;
+  --success: #00b386;
+  --danger: #ff4d4f;
+  --radius: 8px;
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  --transition: all 0.3s ease;
+}
+
+/* Base Styles */
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--text);
+  line-height: 1.6;
+  background-color: var(--white);
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+  transition: var(--transition);
+}
+
+a:hover {
+  color: var(--primary-dark);
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  margin-bottom: 1rem;
+  color: var(--text);
+}
+
+.text-muted {
+  color: var(--text-light);
+}
+
+/* Layout */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+.section {
+  padding: 3rem 0;
+}
+
+/* Wellfound-style components */
+.py-6 {
+  padding-top: 5rem;
+  padding-bottom: 5rem;
+}
+
+/* Cards */
+.card {
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  transition: var(--transition);
+  border: 1px solid var(--border);
+}
+
+.card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.card-body {
+  padding: 1.5rem;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.6rem 1.2rem;
+  border-radius: 50px;
+  font-weight: 500;
+  transition: var(--transition);
+  border: none;
+  cursor: pointer;
+  text-align: center;
+}
+
+.btn-lg {
+  padding: 0.8rem 1.8rem;
+  font-size: 1.1rem;
+}
+
+.btn-primary {
+  background-color: var(--primary);
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: var(--primary-dark);
+  color: white;
+}
+
+.btn-outline-primary {
+  background-color: transparent;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+}
+
+.btn-outline-primary:hover {
+  background-color: var(--primary);
+  color: white;
+}
+
+.btn-dark {
+  background-color: #000;
+  color: #fff;
+}
+
+.btn-dark:hover {
+  background-color: #333;
+  color: #fff;
+}
+
+.btn-outline-dark {
+  background-color: transparent;
+  color: #000;
+  border: 1px solid #000;
+}
+
+.btn-outline-dark:hover {
+  background-color: #000;
+  color: white;
+}
+
+/* Hero Section */
+.hero-section {
+  padding: 6rem 0 3rem;
+  background-color: #fff;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Navbar */
+.navbar {
+  background: var(--white);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  padding: 1rem 0;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  will-change: transform; /* Optimize for GPU acceleration */
+}
+
+/* Dropdown Menu Enhancements */
+.dropdown-menu {
+  border: none;
+  min-width: 240px;
+  transform: translateZ(0); /* Force GPU acceleration */
+}
+
+.dropdown-item {
+  transition: background-color 0.2s ease;
+  padding: 0.5rem 1rem;
+}
+
+.dropdown-item:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  transform: translateX(5px);
+}
+
+.dropdown-item i {
+  color: var(--text-light);
+}
+
+.dropdown-item:hover i {
+  color: var(--primary);
+}
+
+/* Optimize dropdown display for better performance */
+@media (min-width: 992px) {
+  .nav-item.dropdown:hover .dropdown-menu {
+    display: block;
+    animation: none; /* Remove animation for better performance */
+  }
+}
+
+/* Logo */
+.navbar-brand img {
+  max-height: 40px;
+  width: auto;
+}
+
+@media (max-width: 576px) {
+  .navbar-brand img {
+    max-height: 32px;
+  }
+}
+
+/* Form Controls */
+.form-control {
+  font-size: 1rem;
+  line-height: 1.5;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: var(--transition);
+}
+
+.form-control:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Company Logos */
+.logo-item {
+  opacity: 0.8;
+  transition: var(--transition);
+}
+
+.logo-item:hover {
+  opacity: 1;
+}
+
+/* Job Tags */
+.job-tag {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  background-color: #f8f9fa;
+  color: var(--text);
+  border-radius: 50px;
+  font-size: 0.875rem;
+  margin-right: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Stats */
+.stat-item .display-4 {
+  line-height: 1;
+  margin-bottom: 0.5rem;
+}
+
+/* Placeholders */
+.company-placeholder {
+  width: 40px;
+  height: 40px;
+  background-color: #f1f1f1;
+  color: #666;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Footer Styling */
+footer {
+  background-color: #000;
+  color: #fff;
+  padding: 5rem 0 2rem;
+}
+
+footer .nav-link {
+  color: rgba(255, 255, 255, 0.7);
+  transition: var(--transition);
+}
+
+footer .nav-link:hover {
+  color: #fff;
+}
+
+footer .footer-heading {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 1.25rem;
+  color: #fff;
+}
+
+footer .footer-links {
+  margin-bottom: 2rem;
+}
+
+footer .footer-links a {
+  color: rgba(255, 255, 255, 0.7);
+  display: block;
+  padding: 0.25rem 0;
+  font-size: 0.875rem;
+}
+
+footer .footer-links a:hover {
+  color: #fff;
+}
+
+footer .social-links a {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.25rem;
+  margin-right: 1rem;
+}
+
+footer .social-links a:hover {
+  color: #fff;
+}
+
+footer .copyright {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.7);
+  display: flex;
+  align-items: center;
+}
+
+footer .copyright img {
+  max-height: 30px;
+  width: auto;
+  margin-right: 10px;
+}
+
+/* Auth Pages */
+.auth-container {
+  min-height: 100vh;
+  padding: 2rem 0;
+  display: flex;
+  align-items: center;
+  background: linear-gradient(to bottom right, #f9f9f9, #f3f3f3);
+}
+
+.auth-container .card {
+  border: none;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
+}
+
+.auth-container .card:hover {
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+}
+
+.auth-container .form-control {
+  height: 3.2rem;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+}
+
+.auth-container .form-control:focus {
+  border-color: #000;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+}
+
+.auth-container .input-group .btn {
+  height: 3.2rem;
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+.auth-container .form-label {
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  color: #4a5568;
+}
+
+.auth-container .btn {
+  padding: 0.75rem 1.5rem;
+}
+
+.auth-container .btn-dark {
+  background-color: #000;
+  border-color: #000;
+}
+
+.auth-container .btn-dark:hover {
+  background-color: #222;
+  border-color: #222;
+}
+
+.auth-container .btn-outline-dark {
+  color: #000;
+  border-color: #e2e8f0;
+}
+
+.auth-container .btn-outline-dark:hover {
+  background-color: #f8f9fa;
+  color: #000;
+  border-color: #e2e8f0;
+}
+
+.auth-container .form-check-input:checked {
+  background-color: #000;
+  border-color: #000;
+}
+
+/* Custom Form Options */
+.custom-option {
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none !important;
+  padding: 0.75rem 1rem;
+}
+
+.custom-option:hover {
+  background-color: #f8f9fa;
+}
+
+.custom-option .form-check-input {
+  margin-right: 0.5rem;
+}
+
+.custom-option .form-check-label {
+  cursor: pointer;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin: 0;
+}
+
+.form-check-input:checked + .form-check-label {
+  color: #000;
+  font-weight: 600;
+}
+
+.custom-option:has(.form-check-input:checked) {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+/* Alert Styling */
+.alert {
+  border: none;
+}
+
+.alert-success {
+  background-color: #f0fff4;
+  color: #2f855a;
+}
+
+.alert-danger {
+  background-color: #fff5f5;
+  color: #c53030;
+}
+
+/* Login Page Wellfound Style */
+.login-container {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+}
+  
+.login-form-container {
+  flex: 1;
+  padding: 3rem 6rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: 480px;
+}
+
+.brand {
+  color: #111;
+  font-weight: 700;
+  font-size: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.brand::after {
+  content: "·";
+  margin-left: 2px;
+  font-weight: 700;
+}
+
+.login-title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin: 1.5rem 0 0.5rem;
+  color: #111;
+}
+
+.login-subtitle {
+  color: #6c757d;
+  margin-bottom: 2rem;
+  font-size: 1.1rem;
+}
+
+/* Media Queries */
+@media (max-width: 768px) {
+  .navbar {
+    padding: 0.75rem 0;
+  }
+  
+  .container {
+    padding: 0 1rem;
+  }
+  
+  .hero-section {
+    padding: 4rem 0 2rem;
+  }
+  
+  .py-6 {
+    padding-top: 3rem;
+    padding-bottom: 3rem;
+  }
+  
+  .login-form-container {
+    padding: 2rem;
+    max-width: 100%;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .container {
+    padding: 0 1.25rem;
+  }
+  
+  .hero-section {
+    padding: 5rem 0 2.5rem;
+  }
+}
+
+/* Ensure only one navigation is displayed */
+.navbar-nav:not(.main-navigation) {
+    display: none !important;
+}
+
+/* Hide any duplicated navigation elements */
+.duplicate-nav,
+.duplicate-navigation,
+.employer-top-nav,
+.employer-navigation,
+.custom-employer-nav {
+    display: none !important;
+}
+
+/* Additional styles to hide multiple navigation bars */
+.header-nav + .header-nav,
+.navbar + .navbar,
+.navbar-nav + .navbar-nav {
+    display: none !important;
+}
+
+/* Public header enhancements */
+@media (max-width: 992px) {
+  #navbarNav {
+    position: absolute;
+    background-color: white;
+    width: 100%;
+    left: 0;
+    top: 65px; /* Position below the navbar */
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    padding: 1rem 1.5rem 1rem 1.5rem; /* Consistent padding */
+    border-radius: 0; /* Remove border-radius */
+  }
+  
+  #navbarNav .nav-link {
+    padding: 0.75rem 1rem;
+    border-radius: 0.375rem;
+  }
+  
+  #navbarNav .nav-link:hover {
+    background-color: rgba(0, 0, 0, 0.04);
+  }
+}
+
+/* Enhanced styling for active navigation items */
+.navbar-nav .nav-link.active,
+.navbar-nav .nav-link:hover {
+  color: var(--primary) !important;
+}
+
+/* Toast notifications */
+.toast-container {
+    z-index: 1060;
+}
+
+/* Line clamp for company descriptions */
+.line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-height: 4.5em; /* Fallback for browsers that don't support -webkit-line-clamp */
+}
+
+/* Company card enhancements */
+.company-card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    height: 100%;
+}
+
+.company-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.1) !important;
+}
+
+.company-logo {
+    object-fit: cover;
+    background-color: #f8f9fa;
+    border: 1px solid rgba(0,0,0,0.05);
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: Arial, sans-serif;
+    font-weight: bold;
+    font-size: 12px;
+}
+
+/* Company detail page logo */
+.detail-company-logo {    width: 80px;    height: 80px;    object-fit: cover;    background-color: #f8f9fa;    border: 1px solid rgba(0,0,0,0.05);    display: flex;    align-items: center;    justify-content: center;    font-family: Arial, sans-serif;    font-weight: bold;    font-size: 16px;}
+
+/* Job Cards */
+.job-card {
+  transition: all 0.3s ease;
+  border-radius: 16px !important;
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+}
+
+.job-card .card-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Hover lift animation */
+.hover-lift {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.hover-lift:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 12px 25px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Row spacing adjustment */
+.row.g-5 {
+  margin-left: -1.5rem;
+  margin-right: -1.5rem;
+}
+
+.row.g-5 > [class*="col-"] {
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+}
+
+/* Add continuous horizontal scrolling animation for company logos */
+.logo-scroll {
+    white-space: nowrap;
+    overflow: hidden;
+    display: flex;
+    /* Remove justify-content to ensure items are tightly packed for scrolling */
+    /* justify-content: center; */
+}
+
+.logo-scroll:hover .logo-item {
+    animation-play-state: paused;
+}
+
+.logo-item {
+    display: inline-block;
+    flex-shrink: 0;
+    /* animation: scroll-logos 5s linear infinite; */
+    /* Adjust duration as needed */
+    /* Add right margin to simulate gap */
+    margin-right: 60px;
+}
+
+/* Remove original gap from logo-scroll if present */
+.logo-scroll[style*="gap:"] {
+    gap: 0 !important;
+}
+
+/* Add custom styles here */
+
+.featured-jobs-scroll-container {
+  display: flex;
+  overflow-x: auto;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch; /* Enables smooth scrolling on iOS */
+  padding-bottom: 15px; /* Add some padding for scrollbar visibility */
+}
+
+.featured-jobs-scroll-container::-webkit-scrollbar {
+  height: 8px;
+}
+
+.featured-jobs-scroll-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+.featured-jobs-scroll-container::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 10px;
+}
+
+.featured-jobs-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+.featured-job-card-col {
+  flex: 0 0 300px; /* Fixed width for cards */
+  max-width: 300px;
+  margin-right: 20px; /* Space between cards */
+}
+
+.featured-job-card-col:last-child {
+  margin-right: 0; /* No margin on the last card */
+}
+
+/* Ensure cards inside the scroll container don't wrap */
+.featured-jobs-scroll-container .row {
+  flex-wrap: nowrap;
+}
+
+.featured-jobs-scroll-container .col-md-6.col-xl-3 {
+    flex: 0 0 auto;
+    width: 300px; /* Explicit width */
+}
+
+/* Mobile menu toggle icon */
+@media (max-width: 991.98px) { /* Applies to small and medium devices */
+  .navbar-toggler-icon {
+    background-image: url("data:image/svg+xml;charset=utf8,%3Csvg viewBox='0 0 30 30' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath stroke='rgba(0, 0, 0, 0.5)' stroke-width='2' stroke-linecap='round' stroke-miterlimit='10' d='M4 7h22M4 15h22M4 23h22'/%3E%3C/svg%3E");
+  }
+}

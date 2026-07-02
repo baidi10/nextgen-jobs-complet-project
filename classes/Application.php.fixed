@@ -1,0 +1,333 @@
+<?php
+// classes/Application.php
+class Application {
+    private $db;
+    
+    public function __construct() {
+        $this->db = Database::getInstance()->getConnection();
+    }
+    
+    /**
+     * Count all applications for a company
+     */
+    public function countCompanyApplications($companyId) {
+        $stmt = $this->db->prepare("
+            SELECT COUNT(a.applicationId) 
+            FROM applications a
+            JOIN jobs j ON a.jobId = j.jobId
+            WHERE j.companyId = :companyId
+        ");
+        $stmt->execute([':companyId' => $companyId]);
+        return $stmt->fetchColumn();
+    }
+    
+    /**
+     * Count hired applicants for a company
+     */
+    public function countHired($companyId) {
+        $stmt = $this->db->prepare("
+            SELECT COUNT(a.applicationId)
+            FROM applications a
+            JOIN jobs j ON a.jobId = j.jobId
+            WHERE j.companyId = :companyId AND a.status = 'hired'
+        ");
+        $stmt->execute([':companyId' => $companyId]);
+        return $stmt->fetchColumn();
+    }
+    
+    /**
+     * Get application counts by status for a company
+     * 
+     * @param int $companyId Company ID
+     * @return array Array of status counts indexed by status name
+     */
+    public function getApplicationStatusCounts($companyId) {
+        $statusCounts = [
+            'pending' => 0,
+            'viewed' => 0,
+            'interviewing' => 0,
+            'hired' => 0,
+            'rejected' => 0
+        ];
+        
+        $stmt = $this->db->prepare("
+            SELECT 
+                a.status, 
+                COUNT(a.applicationId) as count
+            FROM applications a
+            JOIN jobs j ON a.jobId = j.jobId
+            WHERE j.companyId = :companyId
+            GROUP BY a.status
+        ");
+        $stmt->execute([':companyId' => $companyId]);
+        
+        $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Fill in the status counts array with actual data
+        foreach ($results as $result) {
+            $statusCounts[$result['status']] = (int)$result['count'];
+        }
+        
+        return $statusCounts;
+    }
+    
+    /**
+     * Get monthly application counts for a company
+     * 
+     * @param int $companyId Company ID
+     * @param int $months Number of months to get data for
+     * @return array Monthly application counts
+     */
+    public function getMonthlyApplicationCounts($companyId, $months = 6) {
+        $stmt = $this->db->prepare("
+            SELECT 
+                DATE_FORMAT(a.createdAt, '%Y-%m') as month,
+                DATE_FORMAT(a.createdAt, '%b %Y') as month_name,
+                COUNT(a.applicationId) as count
+            FROM applications a
+            JOIN jobs j ON a.jobId = j.jobId
+            WHERE j.companyId = :companyId
+            AND a.createdAt >= DATE_SUB(CURRENT_DATE(), INTERVAL :months MONTH)
+            GROUP BY DATE_FORMAT(a.createdAt, '%Y-%m')
+            ORDER BY month ASC
+        ");
+        
+        $stmt->bindValue(':companyId', $companyId, PDO::PARAM_INT);
+        $stmt->bindValue(':months', $months, PDO::PARAM_INT);
+        $stmt->execute();
+        
+        return $stmt->fetchAll();
+    }
+    
+    /**
+     * Get recent applicants for a company
+     */
+    public function getRecentApplicants($companyId, $limit = 5) {
+        $stmt = $this->db->prepare("
+            SELECT 
+                a.applicationId, a.userId, a.jobId, a.status, a.createdAt,
+                j.jobTitle, u.firstName, u.lastName
+            FROM applications a
+            JOIN jobs j ON a.jobId = j.jobId
+            JOIN users u ON a.userId = u.userId
+            WHERE j.companyId = :companyId
+            ORDER BY a.createdAt DESC
+            LIMIT :limit
+        ");
+        $stmt->bindValue(':companyId', $companyId, PDO::PARAM_INT);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll();
+    }
+    
+    /**
+     * Create a new application
+     */
+    public function create($jobId, $userId, $data) {
+        $this->db->beginTransaction();
+        
+        try {
+            // Check if already applied
+            $stmt = $this->db->prepare("
+                SELECT applicationId FROM applications
+                WHERE jobId = :jobId AND userId = :userId
+            ");
+            $stmt->execute([':jobId' => $jobId, ':userId' => $userId]);
+            
+            if ($stmt->fetch()) {
+                throw new Exception("You've already applied to this job");
+            }
+            
+            // Create application
+            $stmt = $this->db->prepare("
+                INSERT INTO applications (
+                    jobId, userId, coverLetter, resumeUrl, status, createdAt
+                ) VALUES (
+                    :jobId, :userId, :coverLetter, :resumeUrl, 'pending', NOW()
+                )
+            ");
+            
+            $stmt->execute([
+                ':jobId' => $jobId,
+                ':userId' => $userId,
+                ':coverLetter' => $data['coverLetter'] ?? null,
+                ':resumeUrl' => $data['resumeUrl'] ?? null
+            ]);
+            
+            // Update application count
+            $stmt = $this->db->prepare("
+                UPDATE jobs 
+                SET applicationsCount = applicationsCount + 1 
+                WHERE jobId = :jobId
+            ");
+            $stmt->execute([':jobId' => $jobId]);
+            
+            $this->db->commit();
+            return $this->db->lastInsertId();
+        } catch (Exception $e) {
+            $this->db->rollBack();
+            throw $e;
+        }
+    }
+    
+    public function getApplicationsForUser($userId, $status = null, $limit = null) {
+        $sql = "
+            SELECT a.*, j.jobTitle, j.jobSlug, c.companyName
+            FROM applications a
+            JOIN jobs j ON a.jobId = j.jobId
+            JOIN companies c ON j.companyId = c.companyId
+            WHERE a.userId = :userId
+        ";
+        
+        if ($status !== null) {
+            $sql .= " AND a.status = :status";
+        }
+        
+        $sql .= " ORDER BY a.createdAt DESC";
+        
+        // Use direct value for LIMIT instead of parameter
+        if ($limit !== null) {
+            $sql .= " LIMIT " . (int)$limit;
+        }
+        
+        $stmt = $this->db->prepare($sql);
+        
+        // Bind parameters
+        $stmt->bindValue(':userId', $userId);
+        if ($status !== null) {
+            $stmt->bindValue(':status', $status);
+        }
+        
+        $stmt->execute();
+        return $stmt->fetchAll();
+    }
+    
+    public function getApplicationsForJob($jobId, $status = null) {
+        $sql = "
+            SELECT a.*, u.firstName, u.lastName, u.email
+            FROM applications a
+            JOIN users u ON a.userId = u.userId
+            WHERE a.jobId = :jobId
+        ";
+        
+        $params = [':jobId' => $jobId];
+        
+        if ($status !== null) {
+            $sql .= " AND a.status = :status";
+            $params[':status'] = $status;
+        }
+        
+        $sql .= " ORDER BY a.createdAt DESC";
+        
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+    
+    /**
+     * Update application status
+     */
+    public function updateStatus($applicationId, $status) {
+        $stmt = $this->db->prepare("
+            UPDATE applications SET status = :status WHERE applicationId = :id
+        ");
+        return $stmt->execute([
+            ':id' => $applicationId,
+            ':status' => $status
+        ]);
+    }
+    
+    /**
+     * Get applicants for a specific job
+     * 
+     * @param int $jobId The ID of the job
+     * @param string|null $statusFilter Filter applications by status
+     * @return array Array of applicants
+     */
+    public function getApplicantsForJob($jobId, $statusFilter = 'all') {
+        $sql = "
+            SELECT 
+                a.applicationId, a.userId, a.jobId, a.status, a.createdAt as appliedAt,
+                a.resumeUrl as resumePath, 
+                u.firstName, u.lastName, u.email
+            FROM applications a
+            JOIN users u ON a.userId = u.userId
+            WHERE a.jobId = :jobId
+        ";
+        
+        $params = [':jobId' => $jobId];
+        
+        if ($statusFilter !== 'all') {
+            $sql .= " AND a.status = :status";
+            $params[':status'] = $statusFilter;
+        }
+        
+        $sql .= " ORDER BY a.createdAt DESC";
+        
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+    
+    /**
+     * Apply for a job
+     * 
+     * @param int $userId ID of the user applying
+     * @param int $jobId ID of the job being applied for
+     * @param string $coverLetter Optional cover letter
+     * @param string $resumePath Path to uploaded resume file
+     * @return bool True on success, false on failure
+     */
+    public function apply($userId, $jobId, $coverLetter = '', $resumePath = '') {
+        // Check if user already applied for this job
+        $stmt = $this->db->prepare("
+            SELECT COUNT(*) FROM applications 
+            WHERE userId = ? AND jobId = ?
+        ");
+        $stmt->execute([$userId, $jobId]);
+        $exists = $stmt->fetchColumn() > 0;
+        
+        if ($exists) {
+            throw new Exception('You have already applied for this job');
+        }
+        
+        // Insert application
+        $stmt = $this->db->prepare("
+            INSERT INTO applications (
+                userId, jobId, coverLetter, resumePath, applicationDate, status
+            ) VALUES (
+                ?, ?, ?, ?, NOW(), 'pending'
+            )
+        ");
+        
+        return $stmt->execute([
+            $userId, 
+            $jobId, 
+            $coverLetter, 
+            $resumePath
+        ]);
+    }
+
+    /**
+     * Get a single application by ID
+     * 
+     * @param int $applicationId The application ID
+     * @return array|bool Application data or false if not found
+     */
+    public function getApplicationById($applicationId) {
+        $stmt = $this->db->prepare("
+            SELECT 
+                a.applicationId, a.userId, a.jobId, a.status, a.createdAt as appliedAt,
+                a.resumeUrl as resumePath, a.coverLetter,
+                u.firstName, u.lastName, u.email,
+                j.jobTitle, j.companyId
+            FROM applications a
+            JOIN users u ON a.userId = u.userId
+            JOIN jobs j ON a.jobId = j.jobId
+            WHERE a.applicationId = :applicationId
+        ");
+        
+        $stmt->execute([':applicationId' => $applicationId]);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+} 
